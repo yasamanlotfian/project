@@ -8,23 +8,15 @@ from jwt import PyJWTError
 
 app = FastAPI()
 
-# =====================
-# CONFIG
-# =====================
 SECRET_KEY = "mysecretkey123"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# =====================
-# SECURITY
-# =====================
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
-# =====================
-# FAKE DATABASE
-# =====================
 hashed_default_password = pwd_context.hash("1234")
 
 users_db = {
@@ -99,9 +91,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     return user
 
 
-# =====================
-# ROUTES
-# =====================
 @app.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
