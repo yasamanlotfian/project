@@ -1,50 +1,85 @@
-from typing import Union
-from fastapi import FastAPI
+from typing import Union, Optional
+from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
+
+
 items = []
 
-@app.get("/")
-def read_root():
-    print("current items :", items)
-    return {"hello": "world", "items": items}
 
-# GET
-@app.get("/items")
-def get_items():
-    print("GET/items ->", items)
+def get_all_items():
     return items
 
-# POST
-@app.post("/items")
-def create_item(name: str):
-    item = {"id": len(items) + 1, "name": name}
+
+def create_item_service(name: str):
+    item = {
+        "id": len(items) + 1,
+        "name": name
+    }
     items.append(item)
-    print("item  created:", item)
-    print("All items :", items)
     return item
 
 
-# PATCH
-@app.patch("/items/{item_id}")
-def update_item(item_id: int, name: Union[str, None] = None):
+def find_item(item_id: int):
     for item in items:
         if item["id"] == item_id:
-            if name:
-                item["name"] = name
-
-            print("item updated:", item)
             return item
-        print("updated failled:Item not found")
+    return None
 
-# DELETE
-@app.delete("/items/{item_id}")
-def delete_item(item_id: int):
+
+def update_item_service(item_id: int, name: Optional[str]):
+    item = find_item(item_id)
+
+    if item is None:
+        return None
+
+    if name is not None:
+        item["name"] = name
+
+    return item
+
+
+def delete_item_service(item_id: int):
     for i, item in enumerate(items):
         if item["id"] == item_id:
-            removed = items.pop(i)
-            print("Item removed:", removed)
-            print("Removing items: ", items)
+            return items.pop(i)
 
-            return removed
-print("Delete failled :Item not found")
+    return None
+
+
+@app.get("/")
+def read_root():
+    return {
+        "hello": "world",
+        "items": get_all_items()
+    }
+
+
+@app.get("/items")
+def get_items():
+    return get_all_items()
+
+
+@app.post("/items")
+def create_item(name: str):
+    return create_item_service(name)
+
+
+@app.patch("/items/{item_id}")
+def update_item(item_id: int, name: Optional[str] = None):
+    result = update_item_service(item_id, name)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    return result
+
+
+@app.delete("/items/{item_id}")
+def delete_item(item_id: int):
+    result = delete_item_service(item_id)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    return result
