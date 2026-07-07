@@ -1,88 +1,79 @@
-from sqlalchemy.orm import Session
+from database import SessionLocal
 
-from tables.blog import SessionLocal as BlogDB, Blog, Base as BlogBase, engine as blog_engine
-from tables.comment import SessionLocal as CommentDB, Comment, Base as CommentBase, engine as comment_engine
-from tables.gallery import SessionLocal as GalleryDB, Gallery, Base as GalleryBase, engine as gallery_engine
+from models.blog import Blog
+from models.category import Category
+from models.gallery import Gallery
+from models.comment import Comment
 
 
 def seed_data():
-    blog_db: Session = BlogDB()
-    comment_db: Session = CommentDB()
-    gallery_db: Session = GalleryDB()
+
+    print("DATA GENERATION STARTED")
+
+    db = SessionLocal()
 
     try:
-      
-        if blog_db.query(Blog).first():
+
+        if db.query(Blog).first():
             print("Already seeded!")
             return
 
-       
-        blog1 = Blog(
-            title="اولین بلاگ",
-            seo_title="first-blog",
-            description="این اولین بلاگ تستی است"
-        )
+        for c in range(1, 6):
 
-        blog2 = Blog(
-            title="آموزش FastAPI",
-            seo_title="fastapi-guide",
-            description="آموزش کامل FastAPI"
-        )
+            category = Category(
+                name=f"Category {c}"
+            )
 
-        blog_db.add_all([blog1, blog2])
-        blog_db.commit()
+            db.add(category)
+            db.commit()
+            db.refresh(category)
 
-        blog_db.refresh(blog1)
-        blog_db.refresh(blog2)
+            for b in range(1, 11):
 
-   
-        comment1 = Comment(
-            post_id=blog1.id,
-            name="Ali",
-            email="ali@test.com",
-            content="خیلی عالی بود "
-        )
+                blog = Blog(
+                    title=f"Blog {c}-{b}",
+                    seo_title=f"blog-{c}-{b}",
+                    description=f"Description for Blog {c}-{b}",
+                    content=f"Content for Blog {c}-{b}",
+                    category_id=category.id
+                )
 
-        comment2 = Comment(
-            post_id=blog1.id,
-            name="Sara",
-            email="sara@test.com",
-            content="ممنون از آموزش"
-        )
+                db.add(blog)
+                db.commit()
+                db.refresh(blog)
 
-        comment3 = Comment(
-            post_id=blog2.id,
-            name="Reza",
-            email=None,
-            content="خیلی کاربردی بود"
-        )
+                galleries = []
 
-        comment_db.add_all([comment1, comment2, comment3])
-        comment_db.commit()
-        
-gallery1 = Gallery(
-    title="نمای کاور بلاگ",
-    image_url="https://example.com/img1.jpg",
-    category="blog",
-    alt_text="blog cover image"
-)
+                for g in range(1, 3):
+                    galleries.append(
+                        Gallery(
+                            title=f"Gallery {g}",
+                            image_url=f"https://example.com/blog_{blog.id}_{g}.jpg",
+                            alt_text=f"Image {g}",
+                            blog_id=blog.id
+                        )
+                    )
 
-gallery2 = Gallery(
-    title="آموزش FastAPI ",
-    image_url="https://example.com/img2.jpg",
-    category="tutorial",
-    alt_text="fastapi tutorial step 1"
-)
+                db.add_all(galleries)
 
-        gallery_db.add_all([gallery1, gallery2])
-        gallery_db.commit()
+                comments = []
 
-        print("Seed completed successfully ")
+                for cm in range(1, 4):
+                    comments.append(
+                        Comment(
+                            content=f"Comment {cm} for Blog {blog.id}",
+                            blog_id=blog.id
+                        )
+                    )
+
+                db.add_all(comments)
+
+                db.commit()
+
+        print("DATA GENERATION COMPLETED")
 
     finally:
-        blog_db.close()
-        comment_db.close()
-        gallery_db.close()
+        db.close()
 
 
 if __name__ == "__main__":
