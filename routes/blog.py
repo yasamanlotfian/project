@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, asc
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
 from database import get_db
 from models.blog import Blog
-from schemas import BlogCreate, BlogResponse
-
+from models.user import User
+from auth.dependencies import (
+    get_current_user,
+    require_level
+)
 
 router = APIRouter(
     prefix="/blog",
@@ -13,82 +15,44 @@ router = APIRouter(
 )
 
 
-# CREATE
-@router.post("/", response_model=BlogResponse)
-def create_blog(
-    blog: BlogCreate,
-    db: Session = Depends(get_db)
-):
-
-    new_blog = Blog(
-        title=blog.title,
-        seo_title=blog.seo_title,
-        description=blog.description,
-        content=blog.content,
-        category_id=blog.category_id
-    )
-
-    db.add(new_blog)
-    db.commit()
-    db.refresh(new_blog)
-
-    return (
-        db.query(Blog)
-        .options(
-            joinedload(Blog.category),
-            joinedload(Blog.galleries),
-            joinedload(Blog.comments)
-        )
-        .filter(Blog.id == new_blog.id)
-        .first()
-    )
-
-
-# GET ALL
 @router.get("/")
 def get_blogs(
     page: int = 1,
     size: int = 5,
-    search: str | None = None,
+    search: str = None,
     sort_by: str = "id",
-    sort_order: str = "asc",
-    db: Session = Depends(get_db)
+    sort_order: str = "desc",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
 
-    query = (
-        db.query(Blog)
-        .options(
-            joinedload(Blog.category),
-            joinedload(Blog.galleries),
-            joinedload(Blog.comments)
-        )
-    )
+    query = db.query(Blog)
 
-    # Search
     if search:
         query = query.filter(
             Blog.title.ilike(f"%{search}%")
         )
 
-    # Sort
-    sort_columns = {
-        "id": Blog.id,
-        "title": Blog.title,
-        "view_num": Blog.view_num,
-        "created_at": Blog.created_at,
-        "updated_at": Blog.updated_at,
-    }
+    allowed_sort_fields = [
+        "id",
+        "title",
+        "seo_title",
+        "created_at"
+    ]
 
-    column = sort_columns.get(sort_by, Blog.id)
+    if sort_by in allowed_sort_fields:
+        column = getattr(Blog, sort_by)
 
-    if sort_order.lower() == "desc":
-        query = query.order_by(desc(column))
+        if sort_order == "asc":
+            query = query.order_by(column.asc())
+        else:
+            query = query.order_by(column.desc())
     else:
-        query = query.order_by(asc(column))
+        query = query.order_by(Blog.id.desc())
 
     total = query.count()
 
-    blogs = (
+    items = (
         query
         .offset((page - 1) * size)
         .limit(size)
@@ -99,64 +63,50 @@ def get_blogs(
         "page": page,
         "size": size,
         "total": total,
-        "data": blogs
+        "data": items
     }
 
-
-# GET ONE
-@router.get("/{blog_id}", response_model=BlogResponse)
-def get_blog(
-    blog_id: int,
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db)
+@router.post("/")
+def create_blog(
+    title: str,
+    seo_title: str,
+    description: str,
+    category_id: int,
+    content: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_level(3))
 ):
 
-    blog = (
-        db.query(Blog)
-        .options(
-            joinedload(Blog.category),
-            joinedload(Blog.galleries),
-            joinedload(Blog.comments)
-        )
-        .filter(Blog.id == blog_id)
-        .first()
+    blog = Blog(
+        title=title,
+        seo_title=seo_title,
+        description=description,
+        content=content,
+        category_id=category_id
     )
 
-    if not blog:
-        raise HTTPException(
-            status_code=404,
-            detail="Blog not found"
-        )
-
-    cookie_name = f"blog_view_{blog_id}"
-
-    if request.cookies.get(cookie_name) is None:
-
-        blog.view_num += 1
-        db.commit()
-
-        response.set_cookie(
-            key=cookie_name,
-            value="viewed",
-            max_age=1800,
-            httponly=True
-        )
-
-        db.refresh(blog)
+    db.add(blog)
+    db.commit()
+    db.refresh(blog)
 
     return blog
 
 
-# UPDATE
-@router.patch("/{blog_id}", response_model=BlogResponse)
+
+@router.patch("/{blog_id}")
 def update_blog(
     blog_id: int,
-    blog_data: BlogCreate,
-    db: Session = Depends(get_db)
+    title: str = None,
+    seo_title: str = None,
+    description: str = None,
+    content: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_level(3))
 ):
 
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
+    blog = db.query(Blog).filter(
+        Blog.id == blog_id
+    ).first()
 
     if not blog:
         raise HTTPException(
@@ -164,35 +114,37 @@ def update_blog(
             detail="Blog not found"
         )
 
-    blog.title = blog_data.title
-    blog.seo_title = blog_data.seo_title
-    blog.description = blog_data.description
-    blog.content = blog_data.content
-    blog.category_id = blog_data.category_id
+    if title is not None:
+        blog.title = title
+
+    if seo_title is not None:
+        blog.seo_title = seo_title
+
+    if description is not None:
+        blog.description = description
+
+    if content is not None:
+        blog.content = content
 
     db.commit()
     db.refresh(blog)
 
-    return (
-        db.query(Blog)
-        .options(
-            joinedload(Blog.category),
-            joinedload(Blog.galleries),
-            joinedload(Blog.comments)
-        )
-        .filter(Blog.id == blog_id)
-        .first()
-    )
+    return blog
 
 
-# DELETE
+
 @router.delete("/{blog_id}")
 def delete_blog(
     blog_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_level(3))
 ):
 
-    blog = db.query(Blog).filter(Blog.id == blog_id).first()
+    blog = (
+        db.query(Blog)
+        .filter(Blog.id == blog_id)
+        .first()
+    )
 
     if not blog:
         raise HTTPException(
