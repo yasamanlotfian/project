@@ -29,7 +29,7 @@ class Comment(Base):
 
     created_at = Column(DateTime, server_default=func.now())
 
-    app = FastAPI()
+     app = FastAPI()
 
 Base.metadata.create_all(bind=engine)
 
@@ -41,7 +41,7 @@ def get_db():
     finally:
         db.close()
 
-
+""" 
 @app.post("/comments")
 def create_comment(
     post_id: int,
@@ -127,3 +127,4 @@ def delete_comment(comment_id: int, db: Session = Depends(get_db)):
 
     return {"message": "Comment deleted"}
 
+ """
