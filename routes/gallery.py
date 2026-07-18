@@ -106,100 +106,68 @@ def get_gallery_by_id(
         )
 
     return gallery
-
-
-@router.post("/upload")
-def upload_image(
-    blog_id: int,
-    title: str,
-    alt_text: str = "",
-    file: UploadFile = File(...),
+    
+@router.post("/crop")
+def crop_gallery_image(
+    gallery_id: int,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
     current_user: User = Depends(admin_or_operator),
     db: Session = Depends(get_db)
 ):
 
-    blog = db.query(Blog).filter(
-        Blog.id == blog_id
-    ).first()
+    gallery = (
+        db.query(Gallery)
+        .filter(Gallery.id == gallery_id)
+        .first()
+    )
 
-    if not blog:
+    if not gallery:
         raise HTTPException(
             status_code=404,
-            detail="Blog not found"
+            detail="Gallery not found"
         )
 
-    os.makedirs(
-        UPLOAD_ORIGINAL_DIR,
-        exist_ok=True
-    )
-
-    os.makedirs(
-        UPLOAD_WEBP_DIR,
-        exist_ok=True
-    )
-
-    extension = os.path.splitext(
-        file.filename
-    )[1]
-
-    filename = f"{uuid.uuid4()}{extension}"
-
-    original_path = os.path.join(
-        UPLOAD_ORIGINAL_DIR,
-        filename
-    )
-
-    with open(original_path, "wb") as buffer:
-        shutil.copyfileobj(
-            file.file,
-            buffer
+    if not os.path.exists(gallery.original_image_url):
+        raise HTTPException(
+            status_code=404,
+            detail="Original image not found"
         )
-    webp_filename = f"{uuid.uuid4()}.webp"
 
-    webp_path = os.path.join(
-        UPLOAD_WEBP_DIR,
-        webp_filename
-    )
-    image = Image.open(original_path)
+    image = Image.open(gallery.original_image_url)
 
-
-    if image.mode in ("RGBA", "P"):
-        image = image.convert("RGB")
-
-    image = crop_image(image) 
-
-    image.save(
-       webp_path,
-       "WEBP",
-       optimize=True,
-       quality=80
-)    
-
-    original_size = os.path.getsize(
-        original_path
+    cropped = image.crop(
+        (
+            x,
+            y,
+            x + width,
+            y + height
+        )
     )
 
-    optimized_size = os.path.getsize(
-        webp_path
+    if cropped.mode in ("RGBA", "P"):
+        cropped = cropped.convert("RGB")
+
+    cropped.save(
+        gallery.optimized_image_url,
+        "WEBP",
+        optimize=True,
+        quality=80
     )
 
-    gallery = Gallery(
-        title=title,
-        alt_text=alt_text,
-        original_image_url=original_path.replace("\\", "/"),
-        optimized_image_url=webp_path.replace("\\", "/"),
-        original_file_size=original_size,
-        optimized_file_size=optimized_size,
-        mime_type="image/webp",
-        blog_id=blog_id
+    gallery.optimized_file_size = os.path.getsize(
+        gallery.optimized_image_url
     )
 
-    db.add(gallery)
     db.commit()
     db.refresh(gallery)
 
-    return gallery
-
+    return {
+        "message": "Image cropped successfully",
+        "data": gallery
+    }
 
 @router.patch("/{gallery_id}")
 def update_gallery(
